@@ -1,1 +1,6 @@
-To Do, poner aqui dependencias
+pandas
+kafka-python
+psycopg2
+streamlit
+pyspark
+scikit-learn
