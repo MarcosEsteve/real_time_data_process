@@ -1,6 +1,10 @@
 kafka-python
 pyspark
 <<<<<<< HEAD
+<<<<<<< HEAD
 numpy
 =======
 >>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
+=======
+numpy
+>>>>>>> d9288ff (data processing added)

@@ -1,6 +1,0 @@
-pandas
-kafka
-psycopg2
-streamlit
-pyspark
-scikit-learn
