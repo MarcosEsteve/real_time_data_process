@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS bus_traffic_processed (
+    RecordedAtTime_year DOUBLE PRECISION,
+    RecordedAtTime_month DOUBLE PRECISION,
+    RecordedAtTime_day DOUBLE PRECISION,
+    RecordedAtTime_hour DOUBLE PRECISION,
+    RecordedAtTime_minute DOUBLE PRECISION,
+    RecordedAtTime_second DOUBLE PRECISION,
+    ExpectedArrivalTime_year DOUBLE PRECISION,
+    ExpectedArrivalTime_month DOUBLE PRECISION,
+    ExpectedArrivalTime_day DOUBLE PRECISION,
+    ExpectedArrivalTime_hour DOUBLE PRECISION,
+    ExpectedArrivalTime_minute DOUBLE PRECISION,
+    ExpectedArrivalTime_second DOUBLE PRECISION,
+    ScheduledArrivalTime_hour DOUBLE PRECISION,
+    ScheduledArrivalTime_minute DOUBLE PRECISION,
+    ScheduledArrivalTime_second DOUBLE PRECISION,
+    DirectionRef INTEGER,
+    PublishedLineName DOUBLE PRECISION,
+    OriginName DOUBLE PRECISION,
+    OriginCoordinates DOUBLE PRECISION,
+    DestinationName DOUBLE PRECISION,
+    DestinationCoordinates DOUBLE PRECISION,
+    VehicleRef DOUBLE PRECISION,
+    VehicleCoordinates DOUBLE PRECISION,
+    NextStopPointName DOUBLE PRECISION,
+    ArrivalProximityText DOUBLE PRECISION,
+    DistanceFromStop INTEGER
+    PRIMARY KEY (RecordedAtTime_year, RecordedAtTime_month, RecordedAtTime_day, RecordedAtTime_hour, RecordedAtTime_minute, RecordedAtTime_second)
+);
+
