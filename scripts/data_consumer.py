@@ -1,8 +1,14 @@
+<<<<<<< HEAD
 import numpy as np
 from kafka import KafkaConsumer
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, when, mean, lit
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
+=======
+from kafka import KafkaConsumer
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import from_json, col
+>>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
 import json
 
 
@@ -18,6 +24,7 @@ def consume_data(topic, bootstrap_servers):
 
     spark = SparkSession.builder.appName("DataConsumer").getOrCreate()
 
+<<<<<<< HEAD
     # Define schema for DataFrame
     schema = StructType([
         StructField("RecordedAtTime", StringType(), True),
@@ -140,6 +147,20 @@ def save_to_postgres(df):
         .option("user", "user") \
         .option("password", "password") \
         .save()
+=======
+    for message in consumer:
+        record = message.value
+        df = spark.createDataFrame([record])
+        df.show()
+        # Process and save to PostgreSQL here
+        df.write \
+            .format("jdbc") \
+            .option("url", "jdbc:postgresql://postgres:5432/mydb") \
+            .option("dbtable", "bus_traffic") \
+            .option("user", "user") \
+            .option("password", "password") \
+            .save()
+>>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
 
 
 if __name__ == "__main__":

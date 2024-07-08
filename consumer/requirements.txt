@@ -1,3 +1,6 @@
 kafka-python
 pyspark
+<<<<<<< HEAD
 numpy
+=======
+>>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)

@@ -50,8 +50,11 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
+<<<<<<< HEAD
     volumes:
       - ./postgres:/docker-entrypoint-initdb.d
+=======
+>>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
 
   ml_app:
     build:
@@ -62,4 +65,7 @@ services:
       - postgres
       - spark
     command: streamlit run app/main.py
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
