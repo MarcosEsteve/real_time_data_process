@@ -27,3 +27,4 @@ CREATE TABLE IF NOT EXISTS bus_traffic_processed (
     DistanceFromStop INTEGER
     PRIMARY KEY (RecordedAtTime_year, RecordedAtTime_month, RecordedAtTime_day, RecordedAtTime_hour, RecordedAtTime_minute, RecordedAtTime_second)
 );
+

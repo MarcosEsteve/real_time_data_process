@@ -52,8 +52,6 @@ services:
       - "5432:5432"
     volumes:
       - ./postgres:/docker-entrypoint-initdb.d
-=======
->>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
 
   ml_app:
     build:
@@ -64,18 +62,4 @@ services:
       - postgres
       - spark
     command: streamlit run app/main.py
-<<<<<<< HEAD
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
-=======
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: database
->>>>>>> parent of a0cf7ee (New structure, everything automatic using just 1 command)
->>>>>>> ef8c53a (CSV addition reverted, i guess)
-=======
->>>>>>> 5257522 (trying to solve the reverting)
