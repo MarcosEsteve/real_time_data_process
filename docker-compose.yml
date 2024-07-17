@@ -1,37 +1,55 @@
-version: '1'
+version: '2'
+
 services:
   zookeeper:
-    image: wurstmeister/zookeeper
+    image: wurstmeister/zookeeper:latest
     ports:
       - "2181:2181"
-    environment:
-      ZOO_MY_ID: 1
-      ZOO_PORT: 2181
-      ZOO_SERVERS: server.1=zookeeper:2888:3888
 
   kafka:
-    image: wurstmeister/kafka
+    image: wurstmeister/kafka:latest
     ports:
       - "9092:9092"
     environment:
-      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9093,OUTSIDE://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
-      KAFKA_LISTENERS: INSIDE://0.0.0.0:9093,OUTSIDE://0.0.0.0:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
     depends_on:
       - zookeeper
 
   spark:
-    image: bitnami/spark
+    image: bitnami/spark:latest
+    environment:
+      SPARK_MODE: master
     ports:
       - "8080:8080"
 
+  producer:
+    build:
+      context: ./producer
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - kafka
+    command: python scripts/data_producer.py
+
+  consumer:
+    build:
+      context: ./consumer
+    depends_on:
+      - kafka
+      - spark
+      - postgres
+    command: python scripts/data_consumer.py
+
   postgres:
-    image: postgres
+    build:
+      context: ./postgres
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
-<<<<<<< HEAD
     volumes:
       - ./postgres:/docker-entrypoint-initdb.d
 =======
@@ -48,6 +66,7 @@ services:
     command: streamlit run app/main.py
 <<<<<<< HEAD
 
+<<<<<<< HEAD
 =======
 <<<<<<< HEAD
 >>>>>>> 9bc0750 (New structure, everything automatic using just 1 command)
@@ -58,3 +77,5 @@ services:
       POSTGRES_DB: database
 >>>>>>> parent of a0cf7ee (New structure, everything automatic using just 1 command)
 >>>>>>> ef8c53a (CSV addition reverted, i guess)
+=======
+>>>>>>> 5257522 (trying to solve the reverting)
