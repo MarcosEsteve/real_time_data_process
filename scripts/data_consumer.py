@@ -1,5 +1,8 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> ef8c53a (CSV addition reverted, i guess)
 import numpy as np
 from kafka import KafkaConsumer
 from pyspark.sql import SparkSession
@@ -271,3 +274,5 @@ def save_to_postgres(df):
 
 if __name__ == "__main__":
     consume_data('bus_traffic_data', ['kafka:9092'])
+=======
+>>>>>>> parent of a0cf7ee (New structure, everything automatic using just 1 command)
