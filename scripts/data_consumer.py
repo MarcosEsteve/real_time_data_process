@@ -1,7 +1,7 @@
 import numpy as np
 from kafka import KafkaConsumer
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, when, mean, lit
+from pyspark.sql.functions import col, to_timestamp, when, mean, lit, unix_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 import json
 
@@ -97,6 +97,11 @@ def process_data(df):
         df = df.withColumn(col_name + "_second", col(col_name).substr(7, 2).cast(DoubleType()))
         df = df.drop(col_name)
 
+    # Calculate Delay, our feature to predict, in minutes
+    df = df.withColumn("Delay",
+                       ((col("ExpectedArrivalTime_hour") * 60 + col("ExpectedArrivalTime_minute") + col("ExpectedArrivalTime_second") / 60)
+                        - (col("ScheduledArrivalTime_hour") * 60 + col("ScheduledArrivalTime_minute") + col("ScheduledArrivalTime_second") / 60)))
+
     # Transform non-numeric columns to numeric
     non_numeric_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'VehicleRef',
                            'NextStopPointName', 'ArrivalProximityText']
@@ -118,8 +123,8 @@ def process_data(df):
     # Select upper triangle of correlation matrix
     upper = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
 
-    # Find features with correlation greater than 0.9
-    to_drop = [column for column in upper.columns if any(upper[column] > 0.9)]
+    # Find features with correlation greater than 0.9 (exclude Delay because it is our feature to predict)
+    to_drop = [column for column in upper.columns if any(upper[column] > 0.9) and column != 'Delay']
 
     # Instead of dropping features, to avoid problems with database, I set discarded columns to NULL
     # This approach, although is not very efficient, avoids changing the table in db dynamically based on

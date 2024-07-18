@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS bus_traffic_processed (
     VehicleCoordinates DOUBLE PRECISION,
     NextStopPointName DOUBLE PRECISION,
     ArrivalProximityText DOUBLE PRECISION,
-    DistanceFromStop INTEGER
+    DistanceFromStop INTEGER,
+    Delay DOUBLE PRECISION,
     PRIMARY KEY (RecordedAtTime_year, RecordedAtTime_month, RecordedAtTime_day, RecordedAtTime_hour, RecordedAtTime_minute, RecordedAtTime_second)
 );
 
