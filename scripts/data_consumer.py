@@ -46,13 +46,13 @@ def consume_data(topic, bootstrap_servers):
         # Create a dataframe with that data
         df = spark.createDataFrame([record], schema=schema)
         # Process the data
-        df_processed = process_data(df)
+        df_processed = preprocess_data(df)
         # Check if df_processed is None to skip the save
         if df_processed is not None:
             save_to_postgres(df_processed)
 
 
-def process_data(df):
+def preprocess_data(df):
     # Drop the row if either ExpectedArrivalTime or ScheduledArrivalTime is null
     df = df.dropna(subset=["ExpectedArrivalTime", "ScheduledArrivalTime"], how="any")
     # Check if resulting DataFrame is empty
