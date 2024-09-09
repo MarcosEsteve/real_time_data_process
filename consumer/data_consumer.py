@@ -1,7 +1,7 @@
 import numpy as np
 from kafka import KafkaConsumer
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, when, mean, lit, unix_timestamp
+from pyspark.sql.functions import col, to_timestamp, when, mean, lit
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 import json
 
