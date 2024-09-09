@@ -1,20 +1,41 @@
 import numpy as np
 from kafka import KafkaConsumer
+from kafka.errors import NoBrokersAvailable
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, when, mean, lit
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 import json
+import time
+
+
+def create_kafka_consumer(topic, bootstrap_servers, retries=10, delay=10):
+    """
+    Try to create a Kafka producer, retrying if no brokers are available.
+    :param topic: kafka topic to subscribe to
+    :param bootstrap_servers: Kafka bootstrap servers
+    :param retries: Number of retries before giving up
+    :param delay: Delay between retries in seconds
+    :return: KafkaConsumer instance
+    """
+    for attempt in range(retries):
+        try:
+            consumer = KafkaConsumer(
+                topic,
+                bootstrap_servers=bootstrap_servers,
+                auto_offset_reset='earliest',
+                enable_auto_commit=True,
+                group_id='my-group',
+                value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+            )
+            return consumer
+        except NoBrokersAvailable:
+            print(f"Kafka broker not available. Retrying in {delay} seconds... (Attempt {attempt + 1}/{retries})")
+            time.sleep(delay)
+    raise Exception("Failed to connect to Kafka after multiple retries.")
 
 
 def consume_data(topic, bootstrap_servers):
-    consumer = KafkaConsumer(
-        topic,
-        bootstrap_servers=bootstrap_servers,
-        auto_offset_reset='earliest',
-        enable_auto_commit=True,
-        group_id='my-group',
-        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-    )
+    consumer = create_kafka_consumer(topic, bootstrap_servers, retries=100, delay=10)
 
     spark = SparkSession.builder.appName("DataConsumer").getOrCreate()
 
