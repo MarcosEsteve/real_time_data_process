@@ -55,22 +55,33 @@ def consume_data(topic, bootstrap_servers):
         StructField("VehicleLocation_Longitude", DoubleType(), True),
         StructField("NextStopPointName", StringType(), True),
         StructField("ArrivalProximityText", StringType(), True),
-        StructField("DistanceFromStop", IntegerType(), True),
+        StructField("DistanceFromStop", DoubleType(), True),
         StructField("ExpectedArrivalTime", StringType(), True),
         StructField("ScheduledArrivalTime", StringType(), True)
     ])
 
-    # Process each message (each row) independently
-    for message in consumer:
-        # Get the data from the message
-        record = message.value
-        # Create a dataframe with that data
-        df = spark.createDataFrame([record], schema=schema)
-        # Process the data
-        df_processed = preprocess_data(df)
-        # Check if df_processed is None to skip the save
-        if df_processed is not None:
-            save_to_postgres(df_processed)
+    print("Consumer is starting...")
+    # Main while to wait for messages and preprocess them
+    while True:
+        # Check for new messages
+        messages = consumer.poll(timeout_ms=1000)  # Poll for messages with a timeout
+        if messages:
+            for topic_partition, message_list in messages.items():
+                # Process each message (each row) independently
+                for message in message_list:
+                    print(f"Received message: {message.value}")
+                    # Get the data from the message
+                    record = message.value
+                    # Create a dataframe with that data
+                    df = spark.createDataFrame([record], schema=schema)
+                    # Process the data
+                    df_processed = preprocess_data(df)
+                    # Check if df_processed is None to skip the save
+                    if df_processed is not None:
+                        save_to_postgres(df_processed)
+        else:
+            print("No new messages. Waiting for new messages...")
+            time.sleep(5)  # Sleep for a bit before checking again
 
 
 def preprocess_data(df):

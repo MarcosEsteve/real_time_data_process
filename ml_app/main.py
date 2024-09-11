@@ -7,7 +7,10 @@ import joblib
 import time
 
 # Initialize Spark session
-spark = SparkSession.builder.appName("RealTimeBusDelayPrediction").getOrCreate()
+spark = SparkSession.builder \
+    .appName("RealTimeBusDelayPrediction") \
+    .config("spark.jars", "/opt/spark/jars/postgresql-42.3.1.jar") \
+    .getOrCreate()
 
 
 # Function to load data from PostgreSQL
@@ -19,6 +22,7 @@ def load_data():
         "driver": "org.postgresql.Driver"
     }
     df = spark.read.jdbc(url=jdbc_url, table="bus_traffic_processed", properties=properties)
+    print(f"Loaded {df.count()} records from PostgreSQL")
     return df.toPandas()
 
 
@@ -36,13 +40,13 @@ def train_model(df):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=16)
     model = RandomForestRegressor(n_estimators=100, random_state=16)
     model.fit(X_train, y_train)
-    joblib.dump(model, '../model/bus_delay_model.pkl')
+    joblib.dump(model, './model/bus_delay_model.pkl')
     return model
 
 
 # Function to load trained model
 def load_model():
-    return joblib.load('../model/bus_delay_model.pkl')
+    return joblib.load('./model/bus_delay_model.pkl')
 
 
 # Function to predict delay
@@ -53,12 +57,14 @@ def predict_delay(model, data):
 
 # Function to check if there is enough data to train the model
 def wait_data(threshold=100):
+    warning_placeholder = st.empty()
     while True:
+        warning_placeholder.empty()
         df = load_data()
         if len(df) >= threshold:
             return df
         else:
-            st.warning(f"Gathering data... Currently, there are {len(df)} records. Waiting until there are at least {threshold} records.")
+            warning_placeholder.warning(f"Gathering data... Currently, there are {len(df)} records. Waiting until there are at least {threshold} records.")
             time.sleep(5)
 
 
@@ -70,7 +76,7 @@ bus_df = wait_data()
 bus_df = process_data(bus_df)
 
 # Train model if not already trained
-if 'bus_delay_model.pkl' not in os.listdir():
+if not os.path.exists('./model/bus_delay_model.pkl'):
     with st.spinner('Training model...'):
         bus_delay_model = train_model(bus_df)
         st.success('Model trained successfully!')
