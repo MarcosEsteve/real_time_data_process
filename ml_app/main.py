@@ -22,7 +22,7 @@ def load_data():
         "driver": "org.postgresql.Driver"
     }
     df = spark.read.jdbc(url=jdbc_url, table="bus_traffic_processed", properties=properties)
-    print(f"Loaded {df.count()} records from PostgreSQL")
+    # print(f"Loaded {df.count()} records from PostgreSQL")
     return df.toPandas()
 
 

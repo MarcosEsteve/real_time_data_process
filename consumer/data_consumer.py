@@ -37,7 +37,11 @@ def create_kafka_consumer(topic, bootstrap_servers, retries=10, delay=10):
 def consume_data(topic, bootstrap_servers):
     consumer = create_kafka_consumer(topic, bootstrap_servers, retries=100, delay=10)
 
-    spark = SparkSession.builder.appName("DataConsumer").getOrCreate()
+    # Initialize Spark session
+    spark = SparkSession.builder \
+        .appName("RealTimeBusDelayPrediction") \
+        .config("spark.jars", "/opt/spark/jars/postgresql-42.3.1.jar") \
+        .getOrCreate()
 
     # Define schema for DataFrame
     schema = StructType([
@@ -143,7 +147,7 @@ def preprocess_data(df):
     # Feature engineering: Combine latitude and longitude
     df = df.withColumn("OriginCoordinates", col("OriginLat") + col("OriginLong"))
     df = df.withColumn("DestinationCoordinates", col("DestinationLat") + col("DestinationLong"))
-    df = df.withColumn("VehicleCoordinates", col("VehicleLocation.Latitude") + col("VehicleLocation.Longitude"))
+    df = df.withColumn("VehicleCoordinates", col("VehicleLocation_Latitude") + col("VehicleLocation_Longitude"))
     # Drop columns used in combination
     df = df.drop("OriginLat", "OriginLong", "DestinationLat", "DestinationLong", "VehicleLocation_Latitude",
                  "VehicleLocation_Longitude")

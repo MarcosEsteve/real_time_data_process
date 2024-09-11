@@ -6,7 +6,7 @@ from kafka.errors import NoBrokersAvailable
 
 def produce_data(producer, topic, data):
     for _, row in data.iterrows():
-        print(f"Producing message: {row.to_json()}")
+        # print(f"Producing message: {row.to_json()}")
         message = row.to_json().encode('utf-8')
         producer.send(topic, message)
         time.sleep(1)  # Simulate near real-time
