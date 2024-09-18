@@ -2,8 +2,9 @@ import numpy as np
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, when, mean, lit
+from pyspark.sql.functions import col, to_timestamp, when, mean, lit, udf
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
+from pyspark.ml.feature import StringIndexer
 import json
 import time
 
@@ -55,8 +56,8 @@ def consume_data(topic, bootstrap_servers):
         StructField("DestinationLat", DoubleType(), True),
         StructField("DestinationLong", DoubleType(), True),
         StructField("VehicleRef", StringType(), True),
-        StructField("VehicleLocation_Latitude", DoubleType(), True),
-        StructField("VehicleLocation_Longitude", DoubleType(), True),
+        StructField("VehicleLocation.Latitude", DoubleType(), True),
+        StructField("VehicleLocation.Longitude", DoubleType(), True),
         StructField("NextStopPointName", StringType(), True),
         StructField("ArrivalProximityText", StringType(), True),
         StructField("DistanceFromStop", DoubleType(), True),
@@ -95,10 +96,9 @@ def preprocess_data(df):
     if df.count() == 0:
         return None  # Return None if DataFrame is empty after dropping rows
 
-    # Convert RecordedAtTime, ExpectedArrivalTime and ScheduledArrivalTime to timestamp
+    # Convert RecordedAtTime and ExpectedArrivalTime to timestamp
     df = df.withColumn("RecordedAtTime", to_timestamp("RecordedAtTime", "yyyy-MM-dd HH:mm:ss"))
     df = df.withColumn("ExpectedArrivalTime", to_timestamp("ExpectedArrivalTime", "yyyy-MM-dd HH:mm:ss"))
-    df = df.withColumn("ScheduledArrivalTime", to_timestamp("ScheduledArrivalTime", "HH:mm:ss"))
 
     # Handle missing values in numeric columns
     numeric_columns = [col_name for col_name, dtype in df.dtypes if dtype in ['integer', 'double']]
@@ -125,32 +125,46 @@ def preprocess_data(df):
         df = df.withColumn(col_name + "_minute", col(col_name).cast("string").substr(15, 2).cast(DoubleType()))
         df = df.withColumn(col_name + "_second", col(col_name).cast("string").substr(18, 2).cast(DoubleType()))
         df = df.drop(col_name)  # drop original timestamp column once all columns with features are created
-    # ScheduledArrivalTime does not contain year-month-day
-    half_timestamp_columns = ['ScheduledArrivalTime']
-    for col_name in half_timestamp_columns:
-        df = df.withColumn(col_name + "_hour", col(col_name).substr(1, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_minute", col(col_name).substr(4, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_second", col(col_name).substr(7, 2).cast(DoubleType()))
-        df = df.drop(col_name)
 
-    # Calculate Delay, our feature to predict, in minutes
+    # Define a user defined function to adjust ScheduledArrivalTime_hour for posterior Delay calculation
+    def adjust_scheduled_hour(hour, expected_hour):
+        if hour == 24 or (hour == 23 and expected_hour == 0):
+            return hour - 24
+        return hour
+
+    adjust_scheduled_hour_udf = udf(adjust_scheduled_hour, DoubleType())
+
+    # ScheduledArrivalTime does not contain year-month-day
+    df = df.withColumn("ScheduledArrivalTime_hour", adjust_scheduled_hour_udf(col("ScheduledArrivalTime").substr(1, 2).cast(DoubleType()), col("ExpectedArrivalTime_hour")))
+    df = df.withColumn("ScheduledArrivalTime_minute", col("ScheduledArrivalTime").substr(4, 2).cast(DoubleType()))
+    df = df.withColumn("ScheduledArrivalTime_second", col("ScheduledArrivalTime").substr(7, 2).cast(DoubleType()))
+    df = df.drop("ScheduledArrivalTime")
+
+    # Calculate Delay, our feature to predict, in seconds
     df = df.withColumn("Delay",
-                       ((col("ExpectedArrivalTime_hour") * 60 + col("ExpectedArrivalTime_minute") + col("ExpectedArrivalTime_second") / 60)
-                        - (col("ScheduledArrivalTime_hour") * 60 + col("ScheduledArrivalTime_minute") + col("ScheduledArrivalTime_second") / 60)))
+                       ((col("ExpectedArrivalTime_hour") * 3600 + col("ExpectedArrivalTime_minute") * 60 + col("ExpectedArrivalTime_second"))
+                        - (col("ScheduledArrivalTime_hour") * 3600 + col("ScheduledArrivalTime_minute") * 60 + col("ScheduledArrivalTime_second"))))
 
     # Transform non-numeric columns to numeric
     non_numeric_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'VehicleRef',
                            'NextStopPointName', 'ArrivalProximityText']
+    # Perform String Indexing
     for col_name in non_numeric_columns:
-        df = df.withColumn(col_name, df[col_name].cast(DoubleType()))
+        indexer = StringIndexer(inputCol=col_name, outputCol=col_name + "_index")
+        df = indexer.fit(df).transform(df)
+    # Drop original non-numeric columns
+    df = df.drop(*non_numeric_columns)
+    # Rename indexed columns to original names
+    for col_name in non_numeric_columns:
+        df = df.withColumnRenamed(col_name + "_index", col_name)
 
     # Feature engineering: Combine latitude and longitude
     df = df.withColumn("OriginCoordinates", col("OriginLat") + col("OriginLong"))
     df = df.withColumn("DestinationCoordinates", col("DestinationLat") + col("DestinationLong"))
-    df = df.withColumn("VehicleCoordinates", col("VehicleLocation_Latitude") + col("VehicleLocation_Longitude"))
+    df = df.withColumn("VehicleCoordinates", col("VehicleLocation.Latitude") + col("VehicleLocation.Longitude"))
     # Drop columns used in combination
-    df = df.drop("OriginLat", "OriginLong", "DestinationLat", "DestinationLong", "VehicleLocation_Latitude",
-                 "VehicleLocation_Longitude")
+    df = df.drop("OriginLat", "OriginLong", "DestinationLat", "DestinationLong", "VehicleLocation.Latitude",
+                 "VehicleLocation.Longitude")
 
     # Feature selection
     # Compute correlation matrix
@@ -180,6 +194,8 @@ def save_to_postgres(df):
         .option("dbtable", "bus_traffic_processed") \
         .option("user", "user") \
         .option("password", "password") \
+        .option("driver", "org.postgresql.Driver") \
+        .mode("append") \
         .save()
 
 
