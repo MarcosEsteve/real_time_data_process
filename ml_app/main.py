@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import joblib
@@ -31,6 +32,11 @@ def process_data(df):
     # Drop columns with all null values, according to dropped columns from feature selection
     df = df.dropna(axis=1, how='all')
     return df
+
+
+# Function to decode an integer back to the original string
+def int_to_string(input_int):
+    return input_int.to_bytes((input_int.bit_length() + 7) // 8, 'big').decode()
 
 
 # Function to train model
@@ -83,13 +89,19 @@ if not os.path.exists('./model/bus_delay_model.pkl'):
 else:
     bus_delay_model = load_model()
 
-# Show latest data and predictions
+# Get last records and predict
 st.header("Latest Bus Predictions")
 latest_data = bus_df.tail(5)
 latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['Delay']))
 
+# Revert the string to int encoding to show relevant information of the prediction
+col_to_revert = ['VehicleRef', 'NextStopPointName']
+for col_name in col_to_revert:
+    latest_data = latest_data.withColumn(col_name, int_to_string(col(col_name)))
+
+# Show predictions
 for index, row in latest_data.iterrows():
-    st.write(f"VehicleRef: {row['VehicleRef']}, NextStopPointName: {row['NextStopPointName']}, Predicted Delay: {row['Predicted_Delay']} minutes")
+    st.write(f"VehicleRef: {row['VehicleRef']}, NextStopPointName: {row['NextStopPointName']}, Predicted Delay: {row['Predicted_Delay']} seconds")
 
 # Real-time data prediction
 st.header("Real-Time Prediction")

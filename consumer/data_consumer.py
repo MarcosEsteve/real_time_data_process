@@ -2,9 +2,8 @@ import numpy as np
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, when, mean, lit, udf
+from pyspark.sql.functions import col, to_timestamp, when, mean, lit, udf, hash
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
-from pyspark.ml.feature import StringIndexer
 import json
 import time
 
@@ -65,6 +64,16 @@ def consume_data(topic, bootstrap_servers):
         StructField("ScheduledArrivalTime", StringType(), True)
     ])
 
+    # Truncate database to avoid conflicts with past executions
+    jdbc_url = "jdbc:postgresql://postgres:5432/mydb"
+    properties = {
+        "user": "user",
+        "password": "password",
+        "driver": "org.postgresql.Driver"
+    }
+    # Use a raw SQL query to truncate the table
+    # spark.read.jdbc(url=jdbc_url, table="(TRUNCATE TABLE bus_traffic_processed) AS truncation_query", properties=properties)
+
     print("Consumer is starting...")
     # Main while to wait for messages and preprocess them
     while True:
@@ -100,6 +109,10 @@ def preprocess_data(df):
     df = df.withColumn("RecordedAtTime", to_timestamp("RecordedAtTime", "yyyy-MM-dd HH:mm:ss"))
     df = df.withColumn("ExpectedArrivalTime", to_timestamp("ExpectedArrivalTime", "yyyy-MM-dd HH:mm:ss"))
 
+    # Rename columns with a dot to avoid PySpark misinterpretation
+    df = df.withColumnRenamed("VehicleLocation.Latitude", "VehicleLocation_Latitude")
+    df = df.withColumnRenamed("VehicleLocation.Longitude", "VehicleLocation_Longitude")
+
     # Handle missing values in numeric columns
     numeric_columns = [col_name for col_name, dtype in df.dtypes if dtype in ['integer', 'double']]
     for col_name in numeric_columns:
@@ -118,12 +131,12 @@ def preprocess_data(df):
     # Convert timestamps to numeric features (e.g., year, month, day, hour, minute, second)
     timestamp_columns = ['RecordedAtTime', 'ExpectedArrivalTime']
     for col_name in timestamp_columns:
-        df = df.withColumn(col_name + "_year", col(col_name).cast("string").substr(1, 4).cast(DoubleType()))
-        df = df.withColumn(col_name + "_month", col(col_name).cast("string").substr(6, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_day", col(col_name).cast("string").substr(9, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_hour", col(col_name).cast("string").substr(12, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_minute", col(col_name).cast("string").substr(15, 2).cast(DoubleType()))
-        df = df.withColumn(col_name + "_second", col(col_name).cast("string").substr(18, 2).cast(DoubleType()))
+        df = df.withColumn(col_name + "_year", col(col_name).cast("string").substr(1, 4).cast(IntegerType()))
+        df = df.withColumn(col_name + "_month", col(col_name).cast("string").substr(6, 2).cast(IntegerType()))
+        df = df.withColumn(col_name + "_day", col(col_name).cast("string").substr(9, 2).cast(IntegerType()))
+        df = df.withColumn(col_name + "_hour", col(col_name).cast("string").substr(12, 2).cast(IntegerType()))
+        df = df.withColumn(col_name + "_minute", col(col_name).cast("string").substr(15, 2).cast(IntegerType()))
+        df = df.withColumn(col_name + "_second", col(col_name).cast("string").substr(18, 2).cast(IntegerType()))
         df = df.drop(col_name)  # drop original timestamp column once all columns with features are created
 
     # Define a user defined function to adjust ScheduledArrivalTime_hour for posterior Delay calculation
@@ -132,12 +145,12 @@ def preprocess_data(df):
             return hour - 24
         return hour
 
-    adjust_scheduled_hour_udf = udf(adjust_scheduled_hour, DoubleType())
+    adjust_scheduled_hour_udf = udf(adjust_scheduled_hour, IntegerType())
 
     # ScheduledArrivalTime does not contain year-month-day
-    df = df.withColumn("ScheduledArrivalTime_hour", adjust_scheduled_hour_udf(col("ScheduledArrivalTime").substr(1, 2).cast(DoubleType()), col("ExpectedArrivalTime_hour")))
-    df = df.withColumn("ScheduledArrivalTime_minute", col("ScheduledArrivalTime").substr(4, 2).cast(DoubleType()))
-    df = df.withColumn("ScheduledArrivalTime_second", col("ScheduledArrivalTime").substr(7, 2).cast(DoubleType()))
+    df = df.withColumn("ScheduledArrivalTime_hour", adjust_scheduled_hour_udf(col("ScheduledArrivalTime").substr(1, 2).cast(IntegerType()), col("ExpectedArrivalTime_hour")))
+    df = df.withColumn("ScheduledArrivalTime_minute", col("ScheduledArrivalTime").substr(4, 2).cast(IntegerType()))
+    df = df.withColumn("ScheduledArrivalTime_second", col("ScheduledArrivalTime").substr(7, 2).cast(IntegerType()))
     df = df.drop("ScheduledArrivalTime")
 
     # Calculate Delay, our feature to predict, in seconds
@@ -148,23 +161,22 @@ def preprocess_data(df):
     # Transform non-numeric columns to numeric
     non_numeric_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'VehicleRef',
                            'NextStopPointName', 'ArrivalProximityText']
-    # Perform String Indexing
+
+    # Function to encode a string into an integer
+    def string_to_int(input_string):
+        return int.from_bytes(input_string.encode(), 'big')
+
+    # Convert the string columns to integer columns using string_to_int, which is reversible
     for col_name in non_numeric_columns:
-        indexer = StringIndexer(inputCol=col_name, outputCol=col_name + "_index")
-        df = indexer.fit(df).transform(df)
-    # Drop original non-numeric columns
-    df = df.drop(*non_numeric_columns)
-    # Rename indexed columns to original names
-    for col_name in non_numeric_columns:
-        df = df.withColumnRenamed(col_name + "_index", col_name)
+        df = df.withColumn(col_name, string_to_int(col(col_name)))
 
     # Feature engineering: Combine latitude and longitude
     df = df.withColumn("OriginCoordinates", col("OriginLat") + col("OriginLong"))
     df = df.withColumn("DestinationCoordinates", col("DestinationLat") + col("DestinationLong"))
-    df = df.withColumn("VehicleCoordinates", col("VehicleLocation.Latitude") + col("VehicleLocation.Longitude"))
+    df = df.withColumn("VehicleCoordinates", col("VehicleLocation_Latitude") + col("VehicleLocation_Longitude"))
     # Drop columns used in combination
-    df = df.drop("OriginLat", "OriginLong", "DestinationLat", "DestinationLong", "VehicleLocation.Latitude",
-                 "VehicleLocation.Longitude")
+    df = df.drop("OriginLat", "OriginLong", "DestinationLat", "DestinationLong", "VehicleLocation_Latitude",
+                 "VehicleLocation_Longitude")
 
     # Feature selection
     # Compute correlation matrix
