@@ -2,7 +2,7 @@ import numpy as np
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, when, mean, lit, udf, hash
+from pyspark.sql.functions import col, to_timestamp, when, mean, lit, udf
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 import json
 import time
@@ -72,7 +72,7 @@ def consume_data(topic, bootstrap_servers):
         "driver": "org.postgresql.Driver"
     }
     # Use a raw SQL query to truncate the table
-    # spark.read.jdbc(url=jdbc_url, table="(TRUNCATE TABLE bus_traffic_processed) AS truncation_query", properties=properties)
+    spark.read.jdbc(url=jdbc_url, table="(TRUNCATE TABLE bus_traffic_processed) AS truncation_query", properties=properties)
 
     print("Consumer is starting...")
     # Main while to wait for messages and preprocess them
@@ -158,18 +158,6 @@ def preprocess_data(df):
                        ((col("ExpectedArrivalTime_hour") * 3600 + col("ExpectedArrivalTime_minute") * 60 + col("ExpectedArrivalTime_second"))
                         - (col("ScheduledArrivalTime_hour") * 3600 + col("ScheduledArrivalTime_minute") * 60 + col("ScheduledArrivalTime_second"))))
 
-    # Transform non-numeric columns to numeric
-    non_numeric_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'VehicleRef',
-                           'NextStopPointName', 'ArrivalProximityText']
-
-    # Function to encode a string into an integer
-    def string_to_int(input_string):
-        return int.from_bytes(input_string.encode(), 'big')
-
-    # Convert the string columns to integer columns using string_to_int, which is reversible
-    for col_name in non_numeric_columns:
-        df = df.withColumn(col_name, string_to_int(col(col_name)))
-
     # Feature engineering: Combine latitude and longitude
     df = df.withColumn("OriginCoordinates", col("OriginLat") + col("OriginLong"))
     df = df.withColumn("DestinationCoordinates", col("DestinationLat") + col("DestinationLong"))
@@ -186,7 +174,7 @@ def preprocess_data(df):
     upper = correlation_matrix.where(np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool))
 
     # Find features with correlation greater than 0.9 (exclude Delay because it is our feature to predict)
-    to_drop = [column for column in upper.columns if any(upper[column] > 0.9) and column != 'Delay']
+    to_drop = [column for column in upper.columns if any(upper[column] > 0.9) and column not in ['Delay', 'VehicleRef', 'NextStopPointName']]
 
     # Instead of dropping features, to avoid problems with database, I set discarded columns to NULL
     # This approach, although is not very efficient, avoids changing the table in db dynamically based on

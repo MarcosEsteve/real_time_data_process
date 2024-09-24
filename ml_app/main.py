@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
+from pyspark.ml.feature import StringIndexer, StringIndexerModel
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 import joblib
@@ -27,21 +27,26 @@ def load_data():
     return df.toPandas()
 
 
+# Define string columns to index, these columns will need to be converted to integer to fit the model, as they are strings
+string_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'NextStopPointName', 'ArrivalProximityText']
+
+
 # Function to make the last necessary changes in data
 def process_data(df):
+    # Apply StringIndexer to string columns and save the models
+    for col in string_columns:
+        indexer = StringIndexer(inputCol=col, outputCol=f"{col}_indexed", handleInvalid="keep")
+        indexer_model = indexer.fit(df)
+        df = indexer_model.transform(df)
+        indexer_model.save(f'./model/string_indexer_{col}.pkl')  # Save the model for future use
     # Drop columns with all null values, according to dropped columns from feature selection
     df = df.dropna(axis=1, how='all')
     return df
 
 
-# Function to decode an integer back to the original string
-def int_to_string(input_int):
-    return input_int.to_bytes((input_int.bit_length() + 7) // 8, 'big').decode()
-
-
 # Function to train model
 def train_model(df):
-    X = df.drop(columns=['Delay'])
+    X = df.drop(columns=['Delay'] + string_columns) # Exclude original string columns
     y = df['Delay']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=16)
     model = RandomForestRegressor(n_estimators=100, random_state=16)
@@ -53,6 +58,18 @@ def train_model(df):
 # Function to load trained model
 def load_model():
     return joblib.load('./model/bus_delay_model.pkl')
+
+
+# Function to apply saved StringIndexer models during prediction
+def process_new_data(df):
+    # Load and apply saved StringIndexer models
+    for col in string_columns:
+        indexer_model = StringIndexerModel.load(f'./model/string_indexer_{col}.pkl')
+        df = indexer_model.transform(df)
+
+    # Drop columns with all null values, according to dropped columns from feature selection
+    df = df.dropna(axis=1, how='all')
+    return df
 
 
 # Function to predict delay
@@ -94,11 +111,6 @@ st.header("Latest Bus Predictions")
 latest_data = bus_df.tail(5)
 latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['Delay']))
 
-# Revert the string to int encoding to show relevant information of the prediction
-col_to_revert = ['VehicleRef', 'NextStopPointName']
-for col_name in col_to_revert:
-    latest_data = latest_data.withColumn(col_name, int_to_string(col(col_name)))
-
 # Show predictions
 for index, row in latest_data.iterrows():
     st.write(f"VehicleRef: {row['VehicleRef']}, NextStopPointName: {row['NextStopPointName']}, Predicted Delay: {row['Predicted_Delay']} seconds")
@@ -108,7 +120,8 @@ st.header("Real-Time Prediction")
 
 
 def predict_real_time_data():
-    new_data = load_data().tail(5).drop(columns=['Delay'])  # Load the latest record from the database
+    new_data = load_data().tail(5).drop(columns=['Delay'])  # Load the latest records from the database
+    new_data = process_new_data(new_data)
     predicted_delay = predict_delay(bus_delay_model, new_data)
     for i, new_row in new_data.iterrows():
         st.write(
