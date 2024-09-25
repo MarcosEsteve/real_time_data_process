@@ -15,7 +15,7 @@ spark = SparkSession.builder \
 
 
 # Function to load data from PostgreSQL
-def load_data():
+def load_data(num_records=100):
     jdbc_url = "jdbc:postgresql://postgres:5432/mydb"
     properties = {
         "user": "user",
@@ -23,12 +23,14 @@ def load_data():
         "driver": "org.postgresql.Driver"
     }
     df = spark.read.jdbc(url=jdbc_url, table="bus_traffic_processed", properties=properties)
-    # print(f"Loaded {df.count()} records from PostgreSQL")
-    return df.toPandas()
+    # Get only the last num_records, ordered by date
+    df = df.orderBy(["recordedattime_year", "recordedattime_month", "recordedattime_day"], ascending=[False, False, False]).limit(num_records)
+    print(f"Loaded {df.count()} records from PostgreSQL")
+    return df
 
 
 # Define string columns to index, these columns will need to be converted to integer to fit the model, as they are strings
-string_columns = ['PublishedLineName', 'OriginName', 'DestinationName', 'NextStopPointName', 'ArrivalProximityText']
+string_columns = ['publishedlinename', 'originname', 'destinationname', 'nextstoppointname', 'arrivalproximitytext']
 
 
 # Function to make the last necessary changes in data
@@ -38,16 +40,18 @@ def process_data(df):
         indexer = StringIndexer(inputCol=col, outputCol=f"{col}_indexed", handleInvalid="keep")
         indexer_model = indexer.fit(df)
         df = indexer_model.transform(df)
-        indexer_model.save(f'./model/string_indexer_{col}.pkl')  # Save the model for future use
+        indexer_model.write().overwrite().save(f'./model/string_indexer_{col}')  # Save the model for future use
     # Drop columns with all null values, according to dropped columns from feature selection
-    df = df.dropna(axis=1, how='all')
+    df = df.dropna(how='all', subset=df.columns)
     return df
 
 
 # Function to train model
 def train_model(df):
-    X = df.drop(columns=['Delay'] + string_columns) # Exclude original string columns
-    y = df['Delay']
+    df = df.drop(*string_columns)
+    df = df.toPandas()
+    X = df.drop(columns=['delay'])  # Exclude original string columns
+    y = df['delay']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=16)
     model = RandomForestRegressor(n_estimators=100, random_state=16)
     model.fit(X_train, y_train)
@@ -64,30 +68,32 @@ def load_model():
 def process_new_data(df):
     # Load and apply saved StringIndexer models
     for col in string_columns:
-        indexer_model = StringIndexerModel.load(f'./model/string_indexer_{col}.pkl')
+        indexer_model = StringIndexerModel.load(f'./model/string_indexer_{col}')
         df = indexer_model.transform(df)
 
     # Drop columns with all null values, according to dropped columns from feature selection
-    df = df.dropna(axis=1, how='all')
+    df = df.dropna(how='all', subset=df.columns)
     return df
 
 
 # Function to predict delay
 def predict_delay(model, data):
+    # data must be a Pandas dataframe
     predictions = model.predict(data)
     return predictions
 
 
 # Function to check if there is enough data to train the model
-def wait_data(threshold=100):
+def wait_data(threshold=10):
     warning_placeholder = st.empty()
     while True:
         warning_placeholder.empty()
         df = load_data()
-        if len(df) >= threshold:
+        if df.count() >= threshold:
             return df
         else:
-            warning_placeholder.warning(f"Gathering data... Currently, there are {len(df)} records. Waiting until there are at least {threshold} records.")
+            warning_placeholder.warning(f"Gathering data... Currently, there are {df.count()} records."
+                                        f" Waiting until there are at least {threshold} records.")
             time.sleep(5)
 
 
@@ -108,24 +114,25 @@ else:
 
 # Get last records and predict
 st.header("Latest Bus Predictions")
-latest_data = bus_df.tail(5)
-latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['Delay']))
+latest_data = bus_df.toPandas().tail(5)
+latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['delay']))
 
 # Show predictions
 for index, row in latest_data.iterrows():
-    st.write(f"VehicleRef: {row['VehicleRef']}, NextStopPointName: {row['NextStopPointName']}, Predicted Delay: {row['Predicted_Delay']} seconds")
+    st.write(f"VehicleRef: {row['vehicleref']}, NextStopPointName: {row['nextstoppointname']}, Predicted Delay: {row['Predicted_Delay']} seconds")
 
 # Real-time data prediction
 st.header("Real-Time Prediction")
 
 
 def predict_real_time_data():
-    new_data = load_data().tail(5).drop(columns=['Delay'])  # Load the latest records from the database
+    new_data = load_data(num_records=5)  # Load the latest records from the database
     new_data = process_new_data(new_data)
+    new_data = new_data.toPandas().drop(columns=['delay'])
     predicted_delay = predict_delay(bus_delay_model, new_data)
     for i, new_row in new_data.iterrows():
         st.write(
-            f"VehicleRef: {new_row['VehicleRef']}, NextStopPointName: {new_row['NextStopPointName']}, Predicted Delay: {predicted_delay[i]} minutes")
+            f"VehicleRef: {new_row['vehicleref']}, NextStopPointName: {new_row['nextstoppointname']}, Predicted Delay: {predicted_delay[i]} seconds")
 
 
 if st.button("Predict for new data"):

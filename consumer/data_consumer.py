@@ -64,16 +64,6 @@ def consume_data(topic, bootstrap_servers):
         StructField("ScheduledArrivalTime", StringType(), True)
     ])
 
-    # Truncate database to avoid conflicts with past executions
-    jdbc_url = "jdbc:postgresql://postgres:5432/mydb"
-    properties = {
-        "user": "user",
-        "password": "password",
-        "driver": "org.postgresql.Driver"
-    }
-    # Use a raw SQL query to truncate the table
-    spark.read.jdbc(url=jdbc_url, table="(TRUNCATE TABLE bus_traffic_processed) AS truncation_query", properties=properties)
-
     print("Consumer is starting...")
     # Main while to wait for messages and preprocess them
     while True:
@@ -83,7 +73,6 @@ def consume_data(topic, bootstrap_servers):
             for topic_partition, message_list in messages.items():
                 # Process each message (each row) independently
                 for message in message_list:
-                    print(f"Received message: {message.value}")
                     # Get the data from the message
                     record = message.value
                     # Create a dataframe with that data
@@ -95,7 +84,7 @@ def consume_data(topic, bootstrap_servers):
                         save_to_postgres(df_processed)
         else:
             print("No new messages. Waiting for new messages...")
-            time.sleep(5)  # Sleep for a bit before checking again
+            time.sleep(1)  # Sleep for a bit before checking again
 
 
 def preprocess_data(df):
@@ -187,16 +176,19 @@ def preprocess_data(df):
 
 
 def save_to_postgres(df):
-    # Save DataFrame to PostgreSQL
-    df.write \
-        .format("jdbc") \
-        .option("url", "jdbc:postgresql://postgres:5432/mydb") \
-        .option("dbtable", "bus_traffic_processed") \
-        .option("user", "user") \
-        .option("password", "password") \
-        .option("driver", "org.postgresql.Driver") \
-        .mode("append") \
-        .save()
+    try:
+        # Save DataFrame to PostgreSQL
+        df.write \
+            .format("jdbc") \
+            .option("url", "jdbc:postgresql://postgres:5432/mydb") \
+            .option("dbtable", "bus_traffic_processed") \
+            .option("user", "user") \
+            .option("password", "password") \
+            .option("driver", "org.postgresql.Driver") \
+            .mode("append") \
+            .save()
+    except Exception as e:
+        print(f"This record is already in the database, skipping row: {df}")
 
 
 if __name__ == "__main__":

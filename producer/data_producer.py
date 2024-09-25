@@ -6,10 +6,9 @@ from kafka.errors import NoBrokersAvailable
 
 def produce_data(producer, topic, data):
     for _, row in data.iterrows():
-        # print(f"Producing message: {row.to_json()}")
         message = row.to_json().encode('utf-8')
         producer.send(topic, message)
-        time.sleep(1)  # Simulate near real-time
+        time.sleep(0.01)  # Simulate near real-time
 
 
 def create_kafka_producer(bootstrap_servers, retries=10, delay=10):
@@ -24,7 +23,6 @@ def create_kafka_producer(bootstrap_servers, retries=10, delay=10):
         try:
             producer = KafkaProducer(
                 bootstrap_servers=bootstrap_servers,
-                # value_serializer=lambda v: v.encode('utf-8')
             )
             return producer
         except NoBrokersAvailable:
@@ -37,7 +35,6 @@ if __name__ == "__main__":
     kafka_producer = create_kafka_producer('kafka:9092', retries=100, delay=10)
 
     bus_data = pd.read_csv('/data/bus_traffic_real-time_data.csv', on_bad_lines='skip')
-    print("I'm about to produce")
     produce_data(kafka_producer, 'bus_traffic_data', bus_data)
 
     kafka_producer.flush()
