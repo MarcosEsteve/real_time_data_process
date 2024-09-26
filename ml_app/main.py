@@ -30,7 +30,7 @@ def load_data(num_records=100):
 
 
 # Define string columns to index, these columns will need to be converted to integer to fit the model, as they are strings
-string_columns = ['publishedlinename', 'originname', 'destinationname', 'nextstoppointname', 'arrivalproximitytext']
+string_columns = ['publishedlinename', 'vehicleref', 'originname', 'destinationname', 'nextstoppointname', 'arrivalproximitytext']
 
 
 # Function to make the last necessary changes in data
@@ -42,6 +42,8 @@ def process_data(df):
         df = indexer_model.transform(df)
         indexer_model.write().overwrite().save(f'./model/string_indexer_{col}')  # Save the model for future use
     # Drop columns with all null values, according to dropped columns from feature selection
+    print(df.columns)
+    df.show(2)
     df = df.dropna(how='all', subset=df.columns)
     return df
 
@@ -49,6 +51,7 @@ def process_data(df):
 # Function to train model
 def train_model(df):
     df = df.drop(*string_columns)
+    print(df.columns)
     df = df.toPandas()
     X = df.drop(columns=['delay'])  # Exclude original string columns
     y = df['delay']
@@ -84,7 +87,7 @@ def predict_delay(model, data):
 
 
 # Function to check if there is enough data to train the model
-def wait_data(threshold=10):
+def wait_data(threshold=100):
     warning_placeholder = st.empty()
     while True:
         warning_placeholder.empty()
@@ -97,11 +100,26 @@ def wait_data(threshold=10):
             time.sleep(5)
 
 
+# Function to display predictions in a table format
+def display_predictions(data):
+    # Create a dictionary to map the current column names to custom names to display
+    column_names = {
+        'vehicleref': 'Vehicle Reference',
+        'nextstoppointname': 'Next Stop Point',
+        'Predicted_Delay': 'Predicted Delay (seconds)'
+    }
+    # Rename the columns in the DataFrame using the mapping
+    data_renamed = data[['vehicleref', 'nextstoppointname', 'Predicted_Delay']].rename(
+        columns=column_names)
+    # Display the renamed DataFrame in a table
+    st.table(data_renamed)
+
+
 # Streamlit UI
 st.title("Real-Time Bus Delay Prediction")
 
 # Ensure there is sufficient data to train the model
-bus_df = wait_data()
+bus_df = wait_data(20)
 bus_df = process_data(bus_df)
 
 # Train model if not already trained
@@ -111,15 +129,15 @@ if not os.path.exists('./model/bus_delay_model.pkl'):
         st.success('Model trained successfully!')
 else:
     bus_delay_model = load_model()
+    st.success('Model loaded successfully!')
 
 # Get last records and predict
 st.header("Latest Bus Predictions")
 latest_data = bus_df.toPandas().tail(5)
-latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['delay']))
+latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop(columns=['delay'] + string_columns))
 
-# Show predictions
-for index, row in latest_data.iterrows():
-    st.write(f"VehicleRef: {row['vehicleref']}, NextStopPointName: {row['nextstoppointname']}, Predicted Delay: {row['Predicted_Delay']} seconds")
+# Display initial predictions in a table
+display_predictions(latest_data)
 
 # Real-time data prediction
 st.header("Real-Time Prediction")
@@ -127,12 +145,10 @@ st.header("Real-Time Prediction")
 
 def predict_real_time_data():
     new_data = load_data(num_records=5)  # Load the latest records from the database
-    new_data = process_new_data(new_data)
-    new_data = new_data.toPandas().drop(columns=['delay'])
-    predicted_delay = predict_delay(bus_delay_model, new_data)
-    for i, new_row in new_data.iterrows():
-        st.write(
-            f"VehicleRef: {new_row['vehicleref']}, NextStopPointName: {new_row['nextstoppointname']}, Predicted Delay: {predicted_delay[i]} seconds")
+    new_data = process_new_data(new_data)  # Process them
+    new_data = new_data.toPandas().drop(columns=['delay'])  # Drop delay and convert to Pandas for predicting
+    new_data['Predicted_Delay'] = predict_delay(bus_delay_model, new_data.drop(columns=string_columns))  # Predict dropping string columns
+    display_predictions(new_data)  # Display the new predictions in the same table format
 
 
 if st.button("Predict for new data"):

@@ -41,7 +41,7 @@ services:
       - kafka
       - spark
       - postgres
-    command: python data_consumer.py 2> error_log.log
+    command: python data_consumer.py
 
   postgres:
     build:
@@ -63,5 +63,5 @@ services:
     depends_on:
       - postgres
       - spark
-    command: /bin/bash -c "streamlit run main.py > logs/output.log 2>&1"
+    command: streamlit run main.py
 
