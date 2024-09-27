@@ -24,8 +24,9 @@ def load_data(num_records=100):
     }
     df = spark.read.jdbc(url=jdbc_url, table="bus_traffic_processed", properties=properties)
     # Get only the last num_records, ordered by date
-    df = df.orderBy(["recordedattime_year", "recordedattime_month", "recordedattime_day"], ascending=[False, False, False]).limit(num_records)
-    print(f"Loaded {df.count()} records from PostgreSQL")
+    df = df.orderBy(["recordedattime_year", "recordedattime_month", "recordedattime_day",
+                     "recordedattime_hour", "recordedattime_minute", "recordedattime_second"],
+                    ascending=[False, False, False, False, False, False]).limit(num_records)
     return df
 
 
@@ -42,8 +43,6 @@ def process_data(df):
         df = indexer_model.transform(df)
         indexer_model.write().overwrite().save(f'./model/string_indexer_{col}')  # Save the model for future use
     # Drop columns with all null values, according to dropped columns from feature selection
-    print(df.columns)
-    df.show(2)
     df = df.dropna(how='all', subset=df.columns)
     return df
 
@@ -102,11 +101,13 @@ def wait_data(threshold=100):
 
 # Function to display predictions in a table format
 def display_predictions(data):
+    # Convert Predicted Delay from seconds to minutes, rounded down to the nearest whole number
+    data['Predicted_Delay'] = (data['Predicted_Delay'] // 60).astype(int)
     # Create a dictionary to map the current column names to custom names to display
     column_names = {
         'vehicleref': 'Vehicle Reference',
         'nextstoppointname': 'Next Stop Point',
-        'Predicted_Delay': 'Predicted Delay (seconds)'
+        'Predicted_Delay': 'Predicted Delay (minutes)'
     }
     # Rename the columns in the DataFrame using the mapping
     data_renamed = data[['vehicleref', 'nextstoppointname', 'Predicted_Delay']].rename(
@@ -138,9 +139,6 @@ latest_data['Predicted_Delay'] = predict_delay(bus_delay_model, latest_data.drop
 
 # Display initial predictions in a table
 display_predictions(latest_data)
-
-# Real-time data prediction
-st.header("Real-Time Prediction")
 
 
 def predict_real_time_data():
